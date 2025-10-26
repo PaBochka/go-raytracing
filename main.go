@@ -8,6 +8,8 @@ import (
 	"image/jpeg"
 	"math"
 	"os"
+	"runtime"
+	"sync"
 
 	"raytracing/vector3"
 )
@@ -180,20 +182,29 @@ func main() {
 		panic("Can't create RGBA Image")
 	}
 
-	for i := 0; i < w; i++ {
-		for j := 0; j < h; j++ {
-			// Normalized pixed coordinates to [-1, 1]
-			x := ((float64(i)+0.5)*2/float64(w) - 1)
-			y := 1 - ((float64(j) + 0.5) * 2 / float64(h))
-			rayDirection := Vec3{X: float64(x), Y: float64(y), Z: rayDistance}
-			tMin := 1.
-			tMax := math.MaxFloat64
-			recursionDepth := 3
-			clr := TraceRay(start, rayDirection, spheres[:], lights[:], int8(recursionDepth), tMin, tMax)
-			img.Set(i, j, clr)
-		}
-	}
+	cpus := runtime.NumCPU()
+	var wg sync.WaitGroup
 
+	for i := 0; i < cpus; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for row := i; row < h; row += cpus {
+				for col := 0; col < w; col++ {
+					// Normalized pixed coordinates to [-1, 1]
+					x := ((float64(row)+0.5)*2/float64(w) - 1)
+					y := 1 - ((float64(col) + 0.5) * 2 / float64(h))
+					rayDirection := Vec3{X: float64(x), Y: float64(y), Z: rayDistance}
+					tMin := 1.
+					tMax := math.MaxFloat64
+					recursionDepth := 3
+					clr := TraceRay(start, rayDirection, spheres[:], lights[:], int8(recursionDepth), tMin, tMax)
+					img.Set(row, col, clr)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
 	f, err := os.Create("img.png")
 	if err != nil {
 		panic(err)
